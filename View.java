@@ -1,407 +1,385 @@
 import java.awt.Color;
-import java.awt.GridLayout;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
-import java.awt.event.KeyEvent;
-import java.awt.event.KeyListener;
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileWriter;
-import java.text.DateFormat;
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Date;
-import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Scanner;
 
 import javax.swing.JButton;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
+import javax.swing.JMenu;
+import javax.swing.JMenuBar;
+import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
-import javax.swing.JScrollPane;
-import javax.swing.JTextArea;
-import javax.swing.JWindow;
-import javax.swing.Timer;
+import javax.swing.JTextField;
 
 import com.twilio.sdk.TwilioRestClient;
-import com.twilio.sdk.TwilioRestException;
-import com.twilio.sdk.resource.factory.MessageFactory;
-import com.twilio.sdk.resource.instance.Message;
 import com.twilio.sdk.resource.list.MessageList;
 
-import org.apache.http.NameValuePair;
-import org.apache.http.message.BasicNameValuePair;
 
-public class View extends JFrame
-{
-	private final int FRAME_WIDTH = 600;
-	private final int FRAME_HEIGHT = 400;
-	private final int CONTACT_PANEL_WIDTH = 150;
-	private int previousContact = 0;
-	private int currentContact = 0;
+public class View{
+	private JFrame mainWindow;
+	private JFrame newContactWindow;
+	private JFrame twilioAccountWindow;
+
+	private int FRAME_WIDTH = 1000;
+	private int FRAME_HEIGHT = 800;
+	private int NEW_CONTACT_FRAME_WIDTH = 300;
+	private int NEW_CONTACT_FRAME_HEIGHT = 500;
+	private int TWILIO_ACCOUNT_FRAME_WIDTH = 500;
+	private int TWILIO_ACCOUNT_FRAME_HEIGHT = 150;
+	private int CONTACT_PANEL_WIDTH = 200;
+	private int CONVERSATION_PANEL_WIDTH = FRAME_WIDTH - CONTACT_PANEL_WIDTH;
+
+	private String twilioFile = "twilioInfo.txt";
+	private String contactFile = "contactInfo.txt";
 	private String ACCOUNT_SID;
 	private String AUTH_TOKEN;
-	private String contactsFile = "info.txt";
-	private String conversationHistory = "history.txt";
-	private int numOfContacts;
-	private String serviceNumber;
-	private int count = 0;
+	private String twilioServiceNumber;
+
+	private JButton newContactSave, newContactCancel, twilioAccountUpdate, twilioAccountEdit, twilioAccountClose;
+
+	private JTextField twilioAccountSIDField, twilioAuthTokenField, twilioContactField;
+	private JTextField firstNameField, middleNameField, lastNameField, phoneNumberField;
 
 	private JPanel contactArea = new JPanel();
-	private JPanel textingArea = new JPanel();
+	private JPanel messageArea = new JPanel();
+	
+	private ArrayList<Contact> contacts = new ArrayList<Contact>();
 
-	private String[] contacts;
-	private String[] contactNumbers;
-	private JButton[] contactButtons;
-	private JTextArea[] conversationsDisplay;
-	private JScrollPane[] scrollPane;
-	private Date[] lastMessage;
-	private boolean[] newMessage;
-
-	private JPanel contactNamePanel = new JPanel();
-	private JLabel contactNameDisplay = new JLabel("");
-	private JPanel conversationPanel = new JPanel();
-	private JPanel messagePanel = new JPanel();
-	private JButton sendMessageButton = new JButton("Send");
-	private JTextArea message = new JTextArea();
-
-	private TwilioRestClient client;
-
-	private Date date;
-	private long previousTime;
-
-	private Timer timer = new Timer(30000, new TimerListener());
-	private Timer blinkTimer = new Timer(1000, new blinkTimerListener());
-
-	private DateFormat dateFormat = new SimpleDateFormat("HH:mm:ss");
-
-	private Runtime runtime = Runtime.getRuntime();
-	private Thread thread = new Thread(new ShutDownListener());
-
-	private ArrayList<String> history = new ArrayList<String>();
+	private JMenuBar menuBar = new JMenuBar();
+	private JMenu messageMenu = new JMenu("Messages");
+	private JMenu contactMenu = new JMenu("Contacts");
+	private JMenu twilioMenu = new JMenu("Twilio");
+	private JMenuItem newMessage = new JMenuItem("New Message");
+	private JMenuItem newGroupMessage = new JMenuItem("New Group Message");
+	private JMenuItem newContact = new JMenuItem("New Contact");
+	private JMenuItem twilioAccount = new JMenuItem("Account Credentials");
 
 	public View(){
-		super("Texting App");
-		super.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-		super.setLayout(null);
-		textingArea.setLayout(null);
-		conversationPanel.setLayout(null);
-		messagePanel.setLayout(null);
-
+		mainWindow = new JFrame("Texting App");
+		mainWindow.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+		mainWindow.setLayout(null);
+		
+		mainWindow.setJMenuBar(menuBar);
+		menuBar.add(messageMenu);
+		menuBar.add(contactMenu);
+		menuBar.add(twilioMenu);
+		messageMenu.add(newMessage);
+		messageMenu.add(newGroupMessage);
+		contactMenu.add(newContact);
+		twilioMenu.add(twilioAccount);
+		newMessage.addActionListener(new menuListener());
+		newGroupMessage.addActionListener(new menuListener());
+		newContact.addActionListener(new menuListener());
+		twilioAccount.addActionListener(new menuListener());
+		
 		contactArea.setLocation(0, 0);
 		contactArea.setSize(CONTACT_PANEL_WIDTH, FRAME_HEIGHT);
+		messageArea.setLocation(CONTACT_PANEL_WIDTH, 0);
+		messageArea.setSize(CONVERSATION_PANEL_WIDTH, FRAME_HEIGHT);
+		
+		contactArea.setBackground(Color.yellow);
 
-		textingArea.setLocation(contactArea.getWidth(), 0);
-		textingArea.setSize(FRAME_WIDTH - contactArea.getWidth(), FRAME_HEIGHT);
+		mainWindow.add(contactArea);
+		mainWindow.add(messageArea);
 
-		contactNamePanel.setLocation(0,0);
-		contactNamePanel.setSize(textingArea.getWidth(), 30);
+		mainWindow.setSize(FRAME_WIDTH, FRAME_HEIGHT);
+		mainWindow.setResizable(false);
+		mainWindow.setVisible(true);
+		mainWindow.setLocationRelativeTo(null);
+		readFile();
 
-		conversationPanel.setLocation(0,contactNamePanel.getHeight());
-		conversationPanel.setSize(textingArea.getWidth(),textingArea.getHeight() - contactNamePanel.getHeight() - 50);
-
-		messagePanel.setLocation(0, contactNamePanel.getHeight() + conversationPanel.getHeight());
-		messagePanel.setSize(textingArea.getWidth() - 2, FRAME_HEIGHT - 2 - contactNamePanel.getHeight() - conversationPanel.getHeight());
-		messagePanel.setBackground(Color.black);
-
-		message.setLocation(2,2);
-		message.setSize(messagePanel.getWidth() - 86, messagePanel.getHeight() - 4);
-		message.setLineWrap(true);
-
-		sendMessageButton.setLocation(message.getWidth() + 5,2);
-		sendMessageButton.setSize(75, messagePanel.getHeight() - 4);
-
-		contactNamePanel.add(contactNameDisplay);
-
-		date = new Date();
-
-		getInfo();
-
-		contactArea.setLayout(new GridLayout(contacts.length,1));
-
-		for(int x = 0; x < contacts.length; x++)
-		{
-			conversationsDisplay[x] = new JTextArea();
-			conversationsDisplay[x].setLineWrap(true);
-			conversationsDisplay[x].setEditable(false);
-			scrollPane[x] = new JScrollPane(conversationsDisplay[x]);
-			scrollPane[x].setLocation(0,0);
-			scrollPane[x].setSize(conversationPanel.getWidth(), conversationPanel.getHeight());
-			scrollPane[x].setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
-			scrollPane[x].setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
-
-			contactButtons[x] = new JButton(contacts[x]);
-			contactButtons[x].addActionListener(new buttonListener());
-			contactButtons[x].setBackground(Color.white);
-			contactButtons[x].setForeground(Color.black);
-			contactArea.add(contactButtons[x]);
-
-			lastMessage[x] = date;
-			newMessage[x] = false;
-		}
-
-		printHistoryToScreen();
-
-		sendMessageButton.addActionListener(new buttonListener());
-
-		messagePanel.add(message);
-		messagePanel.add(sendMessageButton);
-
-		textingArea.add(contactNamePanel);
-		textingArea.add(conversationPanel);
-		textingArea.add(messagePanel);
-		textingArea.setVisible(false);
-
-		super.add(contactArea);
-		super.add(textingArea);
-
-		super.setSize(FRAME_WIDTH, FRAME_HEIGHT + 26);
-		super.setResizable(false);
-		super.setVisible(true);
-		super.setLocationRelativeTo(null);
-
-		client = new TwilioRestClient(ACCOUNT_SID, AUTH_TOKEN);
-
-		timer.start();
-		blinkTimer.start();
-
+		Runtime runtime = Runtime.getRuntime();
+		Thread thread = new Thread(new ShutDownListener());
 		runtime.addShutdownHook(thread);
 	}
 
-	private void sendMessage(){
-		date = new Date();
+	private void newContactGUI(){
+		newContactWindow = new JFrame("New Contact");
+		newContactWindow.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
+		newContactWindow.setLayout(null);
 
-		conversationsDisplay[currentContact].append("Trinity (" + dateFormat.format(date) + "): " + message.getText() + "\n");
-		history.add(currentContact + "-" + "Trinity (" + dateFormat.format(date) + "): " + message.getText());
+		JLabel firstNameLabel = new JLabel("First Name:");
+		JLabel middleNameLabel = new JLabel("Middle Name:");
+		JLabel lastNameLabel = new JLabel("Last Name:");
+		JLabel phoneNumberLabel = new JLabel("Phone Number:");
+
+		firstNameField = new JTextField(30);
+		middleNameField = new JTextField(30);
+		lastNameField = new JTextField(30);
+		phoneNumberField = new JTextField(30);
+
+		firstNameLabel.setLocation(10, 10);
+		firstNameLabel.setSize(100, 20);
+		firstNameField.setLocation(firstNameLabel.getX() + firstNameLabel.getWidth(), firstNameLabel.getY());
+		firstNameField.setSize(100, 20);
 		
-		List<NameValuePair> params = new ArrayList<NameValuePair>();
+		middleNameLabel.setLocation(firstNameLabel.getX(), firstNameLabel.getY() + firstNameLabel.getHeight() + 20);
+		middleNameLabel.setSize(100, 20);
+		middleNameField.setLocation(firstNameField.getX(), middleNameLabel.getY());
+		middleNameField.setSize(100, 20);
+		
+		lastNameLabel.setLocation(firstNameLabel.getX(), middleNameLabel.getY() + middleNameLabel.getHeight() + 20);
+		lastNameLabel.setSize(100, 20);
+		lastNameField.setLocation(firstNameField.getX(), lastNameLabel.getY());
+		lastNameField.setSize(100, 20);
+		
+		phoneNumberLabel.setLocation(firstNameLabel.getX(), lastNameLabel.getY() + lastNameLabel.getHeight() + 20);
+		phoneNumberLabel.setSize(100, 20);
+		phoneNumberField.setLocation(firstNameField.getX(), phoneNumberLabel.getY());
+		phoneNumberField.setSize(100, 20);
 
-		params.add(new BasicNameValuePair("Body", message.getText()));
-		params.add(new BasicNameValuePair("To", "+1" + contactNumbers[currentContact]));
-		params.add(new BasicNameValuePair("From", serviceNumber));
+		newContactSave = new JButton("Save");
+		newContactSave.setLocation(45, phoneNumberLabel.getY() + phoneNumberLabel.getHeight() + 20);
+		newContactSave.setSize(100, 20);
+		newContactSave.addActionListener(new buttonListener());
+
+		newContactCancel = new JButton("Cancel");
+		newContactCancel.setLocation(newContactSave.getX() + newContactSave.getWidth() + 20, newContactSave.getY());
+		newContactCancel.setSize(newContactSave.getWidth(), newContactSave.getHeight());
+		newContactCancel.addActionListener(new buttonListener());
+
+		newContactWindow.add(firstNameLabel);
+		newContactWindow.add(middleNameLabel);
+		newContactWindow.add(lastNameLabel);
+		newContactWindow.add(phoneNumberLabel);
+		newContactWindow.add(firstNameField);
+		newContactWindow.add(middleNameField);
+		newContactWindow.add(lastNameField);
+		newContactWindow.add(phoneNumberField);
+		newContactWindow.add(newContactSave);
+		newContactWindow.add(newContactCancel);
+
+		newContactWindow.setSize(NEW_CONTACT_FRAME_WIDTH, NEW_CONTACT_FRAME_HEIGHT);
+		newContactWindow.setResizable(false);
+		newContactWindow.setVisible(true);
+		newContactWindow.setLocationRelativeTo(null);
+		mainWindow.setVisible(false);
+	}
+	
+	private void addNewContact(){
+		contacts.add(new Contact(firstNameField.getText(),middleNameField.getText(),lastNameField.getText(),phoneNumberField.getText()));
+		System.out.println(contacts);
+	}
+	
+	private void showTwilioAccountInfo(){
+		twilioAccountWindow = new JFrame("Enter Twilio Account Information");
+		twilioAccountWindow.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
+		twilioAccountWindow.setLayout(null);
+
+		JLabel twilioAccountSID = new JLabel("Account SID:");
+		JLabel twilioAuthToken = new JLabel("Auth Token:");
+		JLabel twilioContactNumber = new JLabel("Contact Number:");
+		JLabel twilioAccountSIDdisplay = new JLabel(ACCOUNT_SID);
+		JLabel twilioAuthTokendisplay = new JLabel(AUTH_TOKEN);
+		JLabel twilioContactNumberdisplay = new JLabel(twilioServiceNumber);
+
+		twilioAccountSID.setLocation(10, 10);
+		twilioAccountSID.setSize(100, 20);
+		twilioAuthToken.setLocation(twilioAccountSID.getX(), twilioAccountSID.getY() + 25);
+		twilioAuthToken.setSize(100, 20);
+		twilioContactNumber.setLocation(twilioAuthToken.getX(), twilioAuthToken.getY() + 25);
+		twilioContactNumber.setSize(100, 20);
+
+		twilioAccountSIDdisplay.setLocation(twilioAccountSID.getX() + twilioAccountSID.getWidth() + 10, twilioAccountSID.getY());
+		twilioAccountSIDdisplay.setSize(300, 20);
+		twilioAuthTokendisplay.setLocation(twilioAccountSIDdisplay.getX(), twilioAccountSIDdisplay.getY() + 25);
+		twilioAuthTokendisplay.setSize(300, 20);
+		twilioContactNumberdisplay.setLocation(twilioAuthTokendisplay.getX(), twilioAuthTokendisplay.getY() + 25);
+		twilioContactNumberdisplay.setSize(300, 20);
+
+		twilioAccountEdit = new JButton("Edit Account Information");
+		twilioAccountEdit.setLocation(twilioContactNumber.getX(), twilioContactNumber.getY() + 25);
+		twilioAccountEdit.setSize(200, 20);
+		twilioAccountEdit.addActionListener(new buttonListener());
+
+		twilioAccountClose = new JButton("Close");
+		twilioAccountClose.setLocation(twilioAccountEdit.getX() + twilioAccountEdit.getWidth() + 10, twilioAccountEdit.getY());
+		twilioAccountClose.setSize(100, 20);
+		twilioAccountClose.addActionListener(new buttonListener());
+
+		twilioAccountWindow.add(twilioAccountSID);
+		twilioAccountWindow.add(twilioAuthToken);
+		twilioAccountWindow.add(twilioContactNumber);
+		twilioAccountWindow.add(twilioAccountSIDdisplay);
+		twilioAccountWindow.add(twilioAuthTokendisplay);
+		twilioAccountWindow.add(twilioContactNumberdisplay);
+		twilioAccountWindow.add(twilioAccountEdit);
+		twilioAccountWindow.add(twilioAccountClose);
+
+		twilioAccountWindow.setSize(TWILIO_ACCOUNT_FRAME_WIDTH, TWILIO_ACCOUNT_FRAME_HEIGHT);
+		twilioAccountWindow.setResizable(false);
+		twilioAccountWindow.setVisible(true);
+		twilioAccountWindow.setLocationRelativeTo(null);
+		mainWindow.setVisible(false);
+	}
+
+	private void updateTwilioAccountInfo(){
+		twilioAccountWindow = new JFrame("Enter Twilio Account Information");
+		twilioAccountWindow.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
+		twilioAccountWindow.setLayout(null);
+
+		JLabel twilioAccountSID = new JLabel("Account SID:");
+		JLabel twilioAuthToken = new JLabel("Auth Token:");
+		JLabel twilioContactNumber = new JLabel("Contact Number:");
+
+		int textLength = 300;
+
+		twilioAccountSIDField = new JTextField(textLength);
+		twilioAccountSIDField.setText(ACCOUNT_SID);
+		twilioAuthTokenField = new JTextField(textLength);
+		twilioAuthTokenField.setText(AUTH_TOKEN);
+		twilioContactField = new JTextField(textLength);
+		twilioContactField.setText(twilioServiceNumber);
+
+		twilioAccountSID.setLocation(10, 10);
+		twilioAccountSID.setSize(100, 20);
+
+		twilioAuthToken.setLocation(twilioAccountSID.getX(), twilioAccountSID.getY() + 25);
+		twilioAuthToken.setSize(100, 20);
+
+		twilioContactNumber.setLocation(twilioAuthToken.getX(), twilioAuthToken.getY() + 25);
+		twilioContactNumber.setSize(100, 20);
+
+		twilioAccountSIDField.setLocation(twilioAccountSID.getX() + twilioAccountSID.getWidth() + 10, twilioAccountSID.getY());
+		twilioAccountSIDField.setSize(textLength, 20);
+		twilioAuthTokenField.setLocation(twilioAccountSIDField.getX(), twilioAccountSIDField.getY() + 25);
+		twilioAuthTokenField.setSize(textLength, 20);
+		twilioContactField.setLocation(twilioAuthTokenField.getX(), twilioAuthTokenField.getY() + 25);
+		twilioContactField.setSize(textLength, 20);
+
+		twilioAccountUpdate = new JButton("Update Account Information");
+		twilioAccountUpdate.setLocation(twilioContactNumber.getX(), twilioContactNumber.getY() + 25);
+		twilioAccountUpdate.setSize(200, 20);
+		twilioAccountUpdate.addActionListener(new buttonListener());
+
+		twilioAccountWindow.add(twilioAccountSID);
+		twilioAccountWindow.add(twilioAuthToken);
+		twilioAccountWindow.add(twilioContactNumber);
+		twilioAccountWindow.add(twilioAccountSIDField);
+		twilioAccountWindow.add(twilioAuthTokenField);
+		twilioAccountWindow.add(twilioContactField);
+		twilioAccountWindow.add(twilioAccountUpdate);
+
+		twilioAccountWindow.setSize(TWILIO_ACCOUNT_FRAME_WIDTH, TWILIO_ACCOUNT_FRAME_HEIGHT);
+		twilioAccountWindow.setResizable(false);
+		twilioAccountWindow.setVisible(true);
+		twilioAccountWindow.setLocationRelativeTo(null);
+		mainWindow.setVisible(false);
+	}
+
+	private void twilioAccountCheck(){
+		boolean infoCorrect = true;
+		ACCOUNT_SID = twilioAccountSIDField.getText();
+		AUTH_TOKEN = twilioAuthTokenField.getText();
+		twilioServiceNumber = twilioContactField.getText();
 
 		try{
-			MessageFactory messageFactory = client.getAccount().getMessageFactory();
-			Message message = messageFactory.create(params);
-		}catch(TwilioRestException e){
-			System.out.println("Error");
-			System.out.println(e.getErrorMessage());
-			System.out.println(params);
+			TwilioRestClient client = new TwilioRestClient(ACCOUNT_SID, AUTH_TOKEN);
+			
+			Map<String, String> filters = new HashMap<String, String>();
+			@SuppressWarnings("unused")
+			MessageList messages = client.getAccount().getMessages(filters);
 		}
-		message.setText("");
-	}
-
-	private void receiveMessages(){
-		long start = System.currentTimeMillis();
-		MessageList messages = client.getAccount().getMessages();
-
-		for (Message message : messages) 
-		{
-			if(message.getDirection().equals("inbound"))
-			{
-				for(int x = 0; x < contacts.length; x++)
-				{
-					if(message.getFrom().equals("+1" + contactNumbers[x]))
-					{
-						if(lastMessage[x].compareTo(message.getDateSent()) < 0)
-						{
-							conversationsDisplay[x].append(contacts[x] + " (" + dateFormat.format(message.getDateSent()) + "): " + message.getBody() + "\n");
-							lastMessage[x] = message.getDateSent();
-							newMessage[x] = true;
-							history.add(x + "-" + contacts[x] + " (" + dateFormat.format(message.getDateSent()) + "): " + message.getBody());
-							repaint();
-						}
-					}
-				}
-			}
+		catch(Exception e){
+			JOptionPane.showMessageDialog(null,"Twilio credentials incorrect.");
+			infoCorrect = false;
 		}
-		long end = System.currentTimeMillis();
-		System.out.println("message search completed - " + (end - start) + " ms");
-	}
 
-	private void changeContact()
-	{
-		contactNameDisplay.setText("");
-		conversationPanel.remove(scrollPane[previousContact]);
-		contactNameDisplay.setText(contacts[currentContact]);
-		conversationPanel.add(scrollPane[currentContact]);
-		newMessage[currentContact] = false;
-		contactButtons[currentContact].setBackground(Color.white);
-		contactButtons[currentContact].setForeground(Color.black);
-		repaint();
+		if(infoCorrect){
+			mainWindow.setVisible(true);
+			twilioAccountWindow.dispose();
+		}else{
+			twilioAccountWindow.dispose();
+			updateTwilioAccountInfo();
+		}
 	}
 
 	private class buttonListener implements ActionListener{
 		public void actionPerformed(ActionEvent e){
-			textingArea.setVisible(true);
-			for(int x = 0; x < contacts.length; x++)
-			{
-				if(e.getSource() == contactButtons[x]){
-					previousContact = currentContact;
-					currentContact = x;
-					changeContact();
-				}
+			if(e.getSource() == newContactSave){
+				addNewContact();
+				mainWindow.setVisible(true);
+				newContactWindow.dispose();
 			}
-			if(e.getSource() == sendMessageButton){
-				if(message.getText().length() > 0)
-					sendMessage();
-				else
-					JOptionPane.showMessageDialog(null,"Message empty");
+			if(e.getSource() == newContactCancel){
+				mainWindow.setVisible(true);
+				newContactWindow.dispose();
+			}
+			if(e.getSource() == twilioAccountUpdate){
+				twilioAccountCheck();
+			}
+			if(e.getSource() == twilioAccountEdit){
+				twilioAccountWindow.dispose();
+				updateTwilioAccountInfo();
+			}
+			if(e.getSource() == twilioAccountClose){
+				mainWindow.setVisible(true);
+				twilioAccountWindow.dispose();
 			}
 		}
 	}
 
-	private class TimerListener implements ActionListener{
-		public void actionPerformed(ActionEvent e){
-			receiveMessages();
+	private class menuListener implements ActionListener{
+		public void actionPerformed(ActionEvent e) {
+			if(e.getSource() == newContact)
+				newContactGUI();
+			if(e.getSource() == twilioAccount)
+				showTwilioAccountInfo();
+			if(e.getSource() == newMessage)
+				JOptionPane.showMessageDialog(null,"New Message Selected");
+			if(e.getSource() == newGroupMessage)
+				JOptionPane.showMessageDialog(null,"New Group Message Selected");
 		}
 	}
 
-	private class blinkTimerListener implements ActionListener{
-		public void actionPerformed(ActionEvent e){
-			for(int x = 0; x < contacts.length; x++)
-			{
-				if(newMessage[x] == true)
-				{
-					if(count % 2 == 0)
-					{
-						contactButtons[x].setBackground(Color.blue);
-						contactButtons[x].setForeground(Color.white);
-					}
-					else
-					{
-						contactButtons[x].setBackground(Color.white);
-						contactButtons[x].setForeground(Color.black);
-					}
-				}
-			}
-			count++;
-			repaint();
-		}
-	}
-
-	private void getInfo(){
-		String temp;
+	private void readFile(){
 		File file;
 		Scanner scan;
 		try {
-			file = new File(contactsFile);
+			file = new File(twilioFile);
 			scan = new Scanner(file);
 
 			ACCOUNT_SID = scan.nextLine();
 			AUTH_TOKEN = scan.nextLine();
-			serviceNumber = scan.nextLine();
-
-			temp = scan.nextLine();
-			try{
-				previousTime = Long.parseLong(temp);
-			}catch(NumberFormatException e){
-				System.out.println("Error converting time from file");
-			}
-			date.setTime(previousTime);
-
-			temp = scan.nextLine();
-			try{
-				numOfContacts = Integer.parseInt(temp);
-			}catch(NumberFormatException e){
-				System.out.println("Error converting number of contacts from file");
-			}
-
-			contacts = new String[numOfContacts];
-			contactNumbers = new String[numOfContacts];
-			contactButtons = new JButton[numOfContacts];
-			conversationsDisplay = new JTextArea[numOfContacts];
-			scrollPane = new JScrollPane[numOfContacts];
-			lastMessage = new Date[numOfContacts];
-			newMessage = new boolean[numOfContacts];
-
-			for(int x = 0; x < numOfContacts; x++){
-				contacts[x] = scan.nextLine();
-				contactNumbers[x] = scan.nextLine();
-			}
+			twilioServiceNumber = scan.nextLine();
 
 			scan.close();
-		} 
-		catch (FileNotFoundException e){e.printStackTrace();}
-
-		try {
-			file = new File(conversationHistory);
-			scan = new Scanner(file);
-
-			while(scan.hasNext())
-			{
-				history.add(scan.nextLine());
-			}
-
-			scan.close();
-		} 
-		catch (FileNotFoundException e){e.printStackTrace();}
-	}
-
-	private void printHistoryToScreen(){
-		int num;
-		String temp;
-		for(int x = 0; x < history.size(); x++){
-			try{
-				temp = "" + history.get(x).charAt(0);
-			num = Integer.parseInt(temp + "");
-			conversationsDisplay[num].append(history.get(x).substring(2, history.get(x).length()) + "\n");
-			}
-			catch(NumberFormatException e){
-				
-			}
 		}
-		repaint();
+		catch (FileNotFoundException e){
+			JOptionPane.showMessageDialog(null,"No saved Twilio Credentials");
+			updateTwilioAccountInfo();
+		}
 	}
 
 	private void writeToFile(){
 		FileWriter outstream;
 		BufferedWriter out;
 		try{
-			outstream  = new FileWriter(contactsFile);
-
+			outstream  = new FileWriter(twilioFile);
 			out = new BufferedWriter(outstream);
-
+			
 			out.write(ACCOUNT_SID);
 			out.newLine();
 			out.write(AUTH_TOKEN);
 			out.newLine();
-			out.write(serviceNumber);
+			out.write(twilioServiceNumber);
 			out.newLine();
-			date = new Date();
-			out.write(date.getTime() + "");
-			out.newLine();
-			out.write(contacts.length + "");
-			out.newLine();
-			for(int x = 0; x < numOfContacts; x++){
-				out.write(contacts[x]);
-				out.newLine();
-				out.write(contactNumbers[x]);
-				out.newLine();
-			}
 
 			out.close();
 		}
 		catch (Exception e){
-			System.err.println("Error: " + e.getMessage());
-		}
-
-		try{
-			outstream  = new FileWriter(conversationHistory);
-
-			out = new BufferedWriter(outstream);
-
-			for(int x = 0; x < history.size(); x++){
-				out.write(history.get(x));
-				out.newLine();
-			}
-
-			out.close();
-		}
-		catch (Exception e){
-			System.err.println("Error: " + e.getMessage());
+			System.err.println(ACCOUNT_SID);
+			System.err.println(AUTH_TOKEN);
+			System.err.println(twilioServiceNumber);
 		}
 	}
 
