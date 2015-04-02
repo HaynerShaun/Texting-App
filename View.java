@@ -1,10 +1,17 @@
 import java.awt.Color;
+import java.awt.FlowLayout;
+import java.awt.GridLayout;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileWriter;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
@@ -18,8 +25,10 @@ import javax.swing.JMenuBar;
 import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
+import javax.swing.JScrollPane;
 import javax.swing.JTextField;
 
+import com.mysql.jdbc.exceptions.*;
 import com.twilio.sdk.TwilioRestClient;
 import com.twilio.sdk.resource.list.MessageList;
 
@@ -29,17 +38,16 @@ public class View{
 	private JFrame newContactWindow;
 	private JFrame twilioAccountWindow;
 
-	private int FRAME_WIDTH = 1000;
-	private int FRAME_HEIGHT = 800;
-	private int NEW_CONTACT_FRAME_WIDTH = 300;
-	private int NEW_CONTACT_FRAME_HEIGHT = 500;
-	private int TWILIO_ACCOUNT_FRAME_WIDTH = 500;
-	private int TWILIO_ACCOUNT_FRAME_HEIGHT = 150;
-	private int CONTACT_PANEL_WIDTH = 200;
-	private int CONVERSATION_PANEL_WIDTH = FRAME_WIDTH - CONTACT_PANEL_WIDTH;
+	private final int FRAME_WIDTH = 1000;
+	private final int FRAME_HEIGHT = 800;
+	private final int NEW_CONTACT_FRAME_WIDTH = 300;
+	private final int NEW_CONTACT_FRAME_HEIGHT = 500;
+	private final int TWILIO_ACCOUNT_FRAME_WIDTH = 500;
+	private final int TWILIO_ACCOUNT_FRAME_HEIGHT = 150;
+	private final int CONTACT_PANEL_WIDTH = 300;
+	private final int CONVERSATION_PANEL_WIDTH = FRAME_WIDTH - CONTACT_PANEL_WIDTH;
 
 	private String twilioFile = "twilioInfo.txt";
-	private String contactFile = "contactInfo.txt";
 	private String ACCOUNT_SID;
 	private String AUTH_TOKEN;
 	private String twilioServiceNumber;
@@ -47,49 +55,66 @@ public class View{
 	private JButton newContactSave, newContactCancel, twilioAccountUpdate, twilioAccountEdit, twilioAccountClose;
 
 	private JTextField twilioAccountSIDField, twilioAuthTokenField, twilioContactField;
-	private JTextField firstNameField, middleNameField, lastNameField, phoneNumberField;
+	private JTextField clientIDField, firstNameField, lastNameField, phoneNumberField;
 
 	private JPanel contactArea = new JPanel();
 	private JPanel messageArea = new JPanel();
-	
-	private ArrayList<Contact> contacts = new ArrayList<Contact>();
+	private JScrollPane scrollPane;
+
+	private ArrayList<Contact> activeContacts = new ArrayList<Contact>();
+	private ArrayList<JButton> contactButtons = new ArrayList<JButton>();
 
 	private JMenuBar menuBar = new JMenuBar();
 	private JMenu messageMenu = new JMenu("Messages");
 	private JMenu contactMenu = new JMenu("Contacts");
-	private JMenu twilioMenu = new JMenu("Twilio");
+	private JMenu setttingsMenu = new JMenu("Settings");
 	private JMenuItem newMessage = new JMenuItem("New Message");
 	private JMenuItem newGroupMessage = new JMenuItem("New Group Message");
 	private JMenuItem newContact = new JMenuItem("New Contact");
-	private JMenuItem twilioAccount = new JMenuItem("Account Credentials");
+	private JMenuItem twilioAccount = new JMenuItem("Twilio Account Credentials");
+	private JMenuItem databaseAccount = new JMenuItem("Database Account Credentials");
+
+	//Database connection information
+	private Connection conn;
+	private Statement st;
+	private ResultSet res;
+	private final String URL = "jdbc:mysql://localhost:3306/";
+	private final String DB_NAME = "Texting_App";
+	private final String DRIVER = "com.mysql.jdbc.Driver";
+	private final String USER_NAME = "root"; 
+	private final String PASSWORD = "textingappv2";
 
 	public View(){
 		mainWindow = new JFrame("Texting App");
 		mainWindow.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 		mainWindow.setLayout(null);
-		
+
 		mainWindow.setJMenuBar(menuBar);
 		menuBar.add(messageMenu);
 		menuBar.add(contactMenu);
-		menuBar.add(twilioMenu);
+		menuBar.add(setttingsMenu);
 		messageMenu.add(newMessage);
 		messageMenu.add(newGroupMessage);
 		contactMenu.add(newContact);
-		twilioMenu.add(twilioAccount);
+		setttingsMenu.add(twilioAccount);
+		setttingsMenu.add(databaseAccount);
 		newMessage.addActionListener(new menuListener());
 		newGroupMessage.addActionListener(new menuListener());
 		newContact.addActionListener(new menuListener());
 		twilioAccount.addActionListener(new menuListener());
-		
-		contactArea.setLocation(0, 0);
-		contactArea.setSize(CONTACT_PANEL_WIDTH, FRAME_HEIGHT);
+		databaseAccount.addActionListener(new menuListener());
+
+		readContactsFromDatabase();
+		addContactButtons();
+		scrollPane = new JScrollPane(contactArea);
+
+		scrollPane.setLocation(0, 0);
+		scrollPane.setSize(CONTACT_PANEL_WIDTH, FRAME_HEIGHT - 50);
 		messageArea.setLocation(CONTACT_PANEL_WIDTH, 0);
 		messageArea.setSize(CONVERSATION_PANEL_WIDTH, FRAME_HEIGHT);
-		
-		contactArea.setBackground(Color.yellow);
 
-		mainWindow.add(contactArea);
 		mainWindow.add(messageArea);
+		mainWindow.add(scrollPane);
 
 		mainWindow.setSize(FRAME_WIDTH, FRAME_HEIGHT);
 		mainWindow.setResizable(false);
@@ -102,39 +127,49 @@ public class View{
 		runtime.addShutdownHook(thread);
 	}
 
+	private void addContactButtons(){
+		contactArea.removeAll();
+		contactArea.setLayout(new GridLayout(contactButtons.size(),1));
+
+		for(int x = 0; x < contactButtons.size(); x++){
+			contactArea.add(contactButtons.get(x));
+		}
+		contactArea.repaint();
+	}
+
 	private void newContactGUI(){
 		newContactWindow = new JFrame("New Contact");
 		newContactWindow.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
 		newContactWindow.setLayout(null);
 
+		JLabel clientIDLabel = new JLabel("Client ID:");
 		JLabel firstNameLabel = new JLabel("First Name:");
-		JLabel middleNameLabel = new JLabel("Middle Name:");
 		JLabel lastNameLabel = new JLabel("Last Name:");
 		JLabel phoneNumberLabel = new JLabel("Phone Number:");
 
+		clientIDField = new JTextField(30);
 		firstNameField = new JTextField(30);
-		middleNameField = new JTextField(30);
 		lastNameField = new JTextField(30);
 		phoneNumberField = new JTextField(30);
 
-		firstNameLabel.setLocation(10, 10);
+		clientIDLabel.setLocation(10, 10);
+		clientIDLabel.setSize(100, 20);
+		clientIDField.setLocation(clientIDLabel.getX() + clientIDLabel.getWidth(), clientIDLabel.getY());
+		clientIDField.setSize(100, 20);
+
+		firstNameLabel.setLocation(clientIDLabel.getX(), clientIDLabel.getY() + clientIDLabel.getHeight() + 20 );
 		firstNameLabel.setSize(100, 20);
-		firstNameField.setLocation(firstNameLabel.getX() + firstNameLabel.getWidth(), firstNameLabel.getY());
+		firstNameField.setLocation(clientIDField.getX(), clientIDField.getY() + clientIDField.getHeight() + 20 );
 		firstNameField.setSize(100, 20);
-		
-		middleNameLabel.setLocation(firstNameLabel.getX(), firstNameLabel.getY() + firstNameLabel.getHeight() + 20);
-		middleNameLabel.setSize(100, 20);
-		middleNameField.setLocation(firstNameField.getX(), middleNameLabel.getY());
-		middleNameField.setSize(100, 20);
-		
-		lastNameLabel.setLocation(firstNameLabel.getX(), middleNameLabel.getY() + middleNameLabel.getHeight() + 20);
+
+		lastNameLabel.setLocation(clientIDLabel.getX(), firstNameLabel.getY() + firstNameLabel.getHeight() + 20 );
 		lastNameLabel.setSize(100, 20);
-		lastNameField.setLocation(firstNameField.getX(), lastNameLabel.getY());
+		lastNameField.setLocation(clientIDField.getX(), firstNameField.getY() + firstNameField.getHeight() + 20 );
 		lastNameField.setSize(100, 20);
-		
-		phoneNumberLabel.setLocation(firstNameLabel.getX(), lastNameLabel.getY() + lastNameLabel.getHeight() + 20);
+
+		phoneNumberLabel.setLocation(clientIDLabel.getX(), lastNameLabel.getY() + lastNameLabel.getHeight() + 20 );
 		phoneNumberLabel.setSize(100, 20);
-		phoneNumberField.setLocation(firstNameField.getX(), phoneNumberLabel.getY());
+		phoneNumberField.setLocation(clientIDField.getX(), lastNameField.getY() + lastNameField.getHeight() + 20 );
 		phoneNumberField.setSize(100, 20);
 
 		newContactSave = new JButton("Save");
@@ -147,12 +182,12 @@ public class View{
 		newContactCancel.setSize(newContactSave.getWidth(), newContactSave.getHeight());
 		newContactCancel.addActionListener(new buttonListener());
 
+		newContactWindow.add(clientIDLabel);
 		newContactWindow.add(firstNameLabel);
-		newContactWindow.add(middleNameLabel);
 		newContactWindow.add(lastNameLabel);
 		newContactWindow.add(phoneNumberLabel);
+		newContactWindow.add(clientIDField);
 		newContactWindow.add(firstNameField);
-		newContactWindow.add(middleNameField);
 		newContactWindow.add(lastNameField);
 		newContactWindow.add(phoneNumberField);
 		newContactWindow.add(newContactSave);
@@ -164,12 +199,24 @@ public class View{
 		newContactWindow.setLocationRelativeTo(null);
 		mainWindow.setVisible(false);
 	}
-	
-	private void addNewContact(){
-		contacts.add(new Contact(firstNameField.getText(),middleNameField.getText(),lastNameField.getText(),phoneNumberField.getText()));
-		System.out.println(contacts);
+
+	private void newMessage(){
+		//activeContacts.add(new Contact(clientID, firstName,lastName,phoneNumber));
+		//contactButtons.add(new JButton(firstName + " " + lastName + " - Client ID: " + clientID));
 	}
-	
+
+	private void addNewContact(){
+		int clientID = Integer.parseInt(clientIDField.getText());
+		String firstName = firstNameField.getText();
+		String lastName = lastNameField.getText();
+		String phoneNumber = phoneNumberField.getText();
+
+		openDatabaseConnection();
+		databaseQuery("INSERT INTO clients values(" + clientID + ", '" + firstName + "', '" 
+				+ lastName + "', '" + phoneNumber + "');");
+		closeDatabaseConnection();
+	}
+
 	private void showTwilioAccountInfo(){
 		twilioAccountWindow = new JFrame("Enter Twilio Account Information");
 		twilioAccountWindow.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
@@ -284,7 +331,7 @@ public class View{
 
 		try{
 			TwilioRestClient client = new TwilioRestClient(ACCOUNT_SID, AUTH_TOKEN);
-			
+
 			Map<String, String> filters = new HashMap<String, String>();
 			@SuppressWarnings("unused")
 			MessageList messages = client.getAccount().getMessages(filters);
@@ -330,14 +377,21 @@ public class View{
 
 	private class menuListener implements ActionListener{
 		public void actionPerformed(ActionEvent e) {
-			if(e.getSource() == newContact)
+			if(e.getSource() == newContact){
 				newContactGUI();
-			if(e.getSource() == twilioAccount)
+			}
+			if(e.getSource() == twilioAccount){
 				showTwilioAccountInfo();
-			if(e.getSource() == newMessage)
+			}
+			if(e.getSource() == newMessage){
 				JOptionPane.showMessageDialog(null,"New Message Selected");
-			if(e.getSource() == newGroupMessage)
+			}
+			if(e.getSource() == newGroupMessage){
 				JOptionPane.showMessageDialog(null,"New Group Message Selected");
+			}
+			if(e.getSource() == databaseAccount){
+				System.out.println("Database account menu item selected");
+			}
 		}
 	}
 
@@ -366,7 +420,7 @@ public class View{
 		try{
 			outstream  = new FileWriter(twilioFile);
 			out = new BufferedWriter(outstream);
-			
+
 			out.write(ACCOUNT_SID);
 			out.newLine();
 			out.write(AUTH_TOKEN);
@@ -389,5 +443,54 @@ public class View{
 		{
 			writeToFile();
 		}
+	}
+
+	private void openDatabaseConnection(){
+		try {
+			Class.forName(DRIVER).newInstance();
+			conn = DriverManager.getConnection(URL + DB_NAME, USER_NAME, PASSWORD);
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+
+	private void closeDatabaseConnection(){
+		try { 
+			conn.close();
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+
+	private void databaseQuery(String query){
+		try { 
+			st = conn.createStatement();
+			st.executeUpdate(query);
+		} catch (MySQLIntegrityConstraintViolationException e) {
+			JOptionPane.showMessageDialog(null,"Duplicate Client ID entered\nContact not added");
+			e.printStackTrace();
+		} catch (Exception e) {
+			JOptionPane.showMessageDialog(null,"Error adding new contact\nContact not added");
+		}
+	}
+
+	private void readContactsFromDatabase(){
+		openDatabaseConnection();
+		try { 
+			st = conn.createStatement();
+			res = st.executeQuery("SELECT * FROM clients");
+			while (res.next()) {
+				int clientID = res.getInt("clientID");
+				String firstName = res.getString("clientFirstName");
+				String lastName = res.getString("clientLastName");
+				String phoneNumber = res.getString("clientPhoneNumber");
+
+				activeContacts.add(new Contact(clientID, firstName, lastName, phoneNumber));
+				contactButtons.add(new JButton(firstName + " " + lastName + " - Client ID: " + clientID));
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		closeDatabaseConnection();
 	}
 }
